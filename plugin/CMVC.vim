@@ -1,13 +1,16 @@
 " File:		CMVC.vim (global plugin)
-" Last Change:	Mon, 01 Apr 2002 15:53:25 Eastern Standard Time
+" Last Change:	2003 Aug 07
 " Maintainer:	Dan Sharp <dwsharp at hotmail dot com>
-" Version:	1.3
+" Version:	1.4
 "
 " NOTE:		This script currently requires Vim 6.  If there is interest
 "		in making it 5.x compatible, let me know and I will see what 
 "		I can do.
 "
 " Documentation: {{{
+"
+" See the included CMVC.txt file for information on how the script actually
+" works.
 " 
 " Installation:	Untar the file into your $VIM/vimfiles (Win32) or ~/.vim
 "		(unix) directory, and it will automatically be loaded when
@@ -26,7 +29,8 @@
 " incorporate it into the next version (and avoid duplicating the work
 " myself).
 "
-" TODO:	    Here are some other things I want to add when I get around to it:
+" TODO:		{{{
+" Here are some other things I want to add when I get around to it:
 "	    -	Implement more functions, like Report, to get a list of
 "		available defects / files / etc., which you can then view or
 "		checkout.
@@ -38,8 +42,9 @@
 "		bring up an "inputdialog" so the user can still enter an
 "		unlisted / new value.
 "	    -	Add commands to let the functions be used in Command mode.
+"		}}} 
 "
-" Changelog:
+" Changelog:	{{{
 "	1.0:	Initial Release
 "	1.1:	Added syntax file to highlight -view output.
 "		Added extra map command for closing -view buffer.
@@ -58,6 +63,11 @@
 "	1.3:	Can checkout / extract a particular version of a file.
 "		Can diff two versions of a file.
 "		Bug fixes.
+"	1.4:	Make Defect List View prettier.	
+"		Fix diff function	
+"		If set to use password authentication, prompt user to log in on
+"		    first command if necessary.
+"		}}}	
 " }}}
 
 if exists("loaded_cmvc") || &cp
@@ -74,18 +84,23 @@ set cpo&vim
 " the variable to blank and the user will be prompted for it when needed. 
 " ===================================================================
 
-let s:cmvcInitialized = 0
+"let s:cmvcInitialized = 0
+let s:cmvcLoggedIn = 0
 
-if exists("g:cmvcUserName")
-    let s:cmvcUserName = g:cmvcUserName
+if exists("g:cmvcUseAuthPW")
+    let s:cmvcUseAuthPW = g:cmvcUseAuthPW
+elseif exists('$CMVC_AUTH_METHOD') && $CMVC_AUTH_METHOD == "PW"
+    let s:cmvcUseAuthPW = 1
 else
-    let s:cmvcUserName = ""
+    let s:cmvcUseAuthPW = 0
 endif
 
 if exists("g:cmvcBecome")
     let s:cmvcBecome = g:cmvcBecome
 elseif exists("$CMVC_BECOME")
     let s:cmvcBecome = $CMVC_BECOME
+elseif exists("g:cmvcUserName")		" For backwards-compatibility with
+    let s:cmvcBecome = g:cmvcUserName	" previous versions.
 else
     let s:cmvcBecome = ""
 endif
@@ -131,17 +146,24 @@ endif
 if exists("g:cmvcUseTracking")
     let s:cmvcUseTracking = g:cmvcUseTracking
 else
+    let s:cmvcUseTracking = 0
+endif
+
+if exists("g:cmvcUseVerbose")
+    let s:cmvcUseVerbose = g:cmvcUseVerbose
+else
     let s:cmvcUseVerbose = 0
 endif
 
-function! s:CmvcInitialize()
-    echo "Initializing settings from server"
-    let initCommand = "Report -general Config" . s:GetParam("family")
-		\   . " -select name,description -where \"type in (\'phase\', \'severity\', \'symptom\') order by type\""
-    let output = system(initCommand)
-    echomsg output
-    let s:cmvcInitialized = 1
-endfunction
+"function! s:CmvcInitialize()
+"    echo "Initializing settings from server"
+"    let initCommand = "Report -general Config" . s:GetParam("family")
+"                \   . " -select name,description -where \"type in (\'phase\', \'severity\', \'symptom\') order by type\""
+"    let output = system(initCommand)
+"    echomsg output
+"    let s:cmvcInitialized = 1
+"endfunction
+
 "}}}
 
 " Utility functions:		{{{
@@ -163,28 +185,18 @@ function! s:Get_become()
 endfunction
 " }}}
 
+" Level             {{{
 function! s:Get_level()
-    if s:cmvcUserName == ""
-	if exists("b:cmvcLevel")
-	    let s:cmvcLevel = b:cmvcLevel
-	else
-	    let s:cmvcLevel = inputdialog("What level should be used?", s:cmvcLevel)
-	endif
+    if exists("b:cmvcLevel")
+	let s:cmvcLevel = b:cmvcLevel
+    else
+	let s:cmvcLevel = inputdialog("What level should be used?", s:cmvcLevel)
     endif
     return s:cmvcLevel
 endfunction
+" }}}
 
-function! s:Get_userName()
-    if s:cmvcUserName == ""
-	if exists("b:cmvcUserName")
-	    let s:cmvcUserName = b:cmvcUserName
-	else
-	    let s:cmvcUserName = inputdialog("What is your user name?", s:cmvcUserName)
-	endif
-    endif
-    return s:cmvcUserName
-endfunction
-
+" Duplicate         {{{
 function! s:Get_duplicate()
     if exists("b:cmvcDuplicate")
 	let cmvcDuplicate = b:cmvcDuplicate
@@ -193,7 +205,9 @@ function! s:Get_duplicate()
     endif
     return cmvcDuplicate
 endfunction
+" }}}
 
+" Answer            {{{
 function! s:Get_answer()
     if exists("b:cmvcAnswer")
 	let cmvcAnswer = b:cmvcAnswer
@@ -202,7 +216,9 @@ function! s:Get_answer()
     endif
     return cmvcAnswer
 endfunction
+" }}}
 
+" Param             {{{
 function! s:GetParam(type)
     execute "let paramValue = s:Get_" . a:type . "()"
     if paramValue == ""
@@ -211,6 +227,7 @@ function! s:GetParam(type)
     let returnValue = " -" . a:type . " " . paramValue
     return returnValue
 endfunction
+" }}}
 
 " Component	    {{{
 function! s:Get_component()
@@ -351,6 +368,7 @@ function! s:Get_version()
 endfunction
 " }}}
 
+" Open Scratch Buffer       {{{
 function s:OpenScratchBuffer(bufName)
     if !bufexists(a:bufName)
 	execute "edit " . a:bufName
@@ -364,7 +382,9 @@ function s:OpenScratchBuffer(bufName)
     set bufhidden=hide
     set noswapfile
 endfunction
+" }}}
 
+" View          {{{
 " Most commands send data to the server and expect no reply.  When specifying
 " the -view option to a command, though, we want to display the output in a
 " new buffer.  Open a scratch buffer and read in the data returned by the view
@@ -378,7 +398,24 @@ function s:View(object, target, extraParams)
     setf cmvc
     normal gg
 endfunction
+" }}}
 
+" Open Report Window	    {{{
+function! s:OpenReportWindow(object, action, params)
+    let bufName = "(" . a:object . "-" . a:action . ")"
+    call s:OpenScratchBuffer(bufName)
+"    execute "silent 0r !Report -view " . a:object . "View" . s:GetParam("family") 
+"        \ . " -where \"releaseName in ('" . s:Get_release() . "') order by name\""
+    execute "silent 0r !Report -g " . a:object . "View" . s:GetParam("family") 
+	\ . " -select name,ownerLogin,state,severity,abstract,age,lastUpdate,compName,releaseName,addDate,originName,symptom"
+	\ . " -where \"releaseName in ('" . s:Get_release() . "') order by name\""
+	\ . " -colspec 15,8,8,3,55,3,19,15,15,19,15,15"
+
+    execute "noremap <buffer> <CR> :execute 'call <SID>View(\"" . a:object . "\",\"' . expand(\"<cword>\") . '\",\"" . s:GetParam("family") . "\")'\<CR>"
+endfunction
+" }}}
+
+" Open Comments Window            {{{
 " Many operations allow the user to add remarks about the action they are
 " performing.  For these operations, split open a scratch buffer where the
 " user can enter these comments.  When the window is closed, execute the 
@@ -408,7 +445,9 @@ function! s:OpenCommentsWindow(object, action, params)
     normal G
     startinsert
 endfunction
+" }}}
 
+" Execute           {{{
 " All commands except -view have the same execution syntax.  This is just
 " a central routine to easily allow global modification of the final command
 " (like adding the -verbose flag, for example).
@@ -420,12 +459,16 @@ function! s:Execute(object, action, params)
     "echomsg commandLine
     let output = system(commandLine)
     if output != ""
-	" Cut off the trailing character before displaying it.
-	let output = strpart(output, 0, strlen(output)-1)
+	" Cut out the null characters before displaying the output.
+        let output = substitute(output, "\n", "", "g")
         echomsg output
+	return -1
     endif
+    return 0
 endfunction
+" }}}
 
+" GetFileToDiff         {{{
 function! s:GetFileToDiff(num, fileName)
     " Use the Report command to determine the full pathname of the desired
     " file.  This allows the user to specify file.ext to actually edit
@@ -441,18 +484,19 @@ function! s:GetFileToDiff(num, fileName)
     " Cut off the trailing ^@ from the returned results.
     let b:fileVersion = strpart(results, stridx(results, '|') + 1, strlen(results) - 1)
 
-    let command = "File -extract " . a:fileName . " -stdout" . s:GetFileCheckingParams() . s:GetParam("version") . " > " . getcwd() . "\\test1"
+    let command = "File -extract " . a:fileName . " -stdout -nocrlf" . s:GetFileCheckingParams() . s:GetParam("version")
     call s:OpenScratchBuffer( a:num . "-" . a:fileName )
     set nobuflisted
     execute "silent! 0r !" . command
 endfunction
+" }}}
 
 " }}}
 
 " Main operation functions: the "external API"	    {{{
 " ===================================================================
 
-" Work with files in the repository.
+" FileCommand: Work with files in the repository.   {{{
 function! s:FileCommand(action)
     let fileName = s:Get_fileName()
     if fileName == ""
@@ -492,13 +536,14 @@ function! s:FileCommand(action)
 	let b:fileVersion = strpart(b:fileVersion, 0, strlen(b:fileVersion) - 1)
 
 	if s:cmvcUseTop == 1
-	    let topParam = " -top " . s:cmvcTop
+	    let topParam = ' -top "' . s:cmvcTop . '"'
 	    if s:cmvcTop != getcwd()
 		execute "cd " . s:cmvcTop
 	    endif
 	endif
-	call s:Execute("File", a:action, fileName . s:GetFileCheckingParams() . s:GetParam("version") . topParam)
-	execute "edit " . fileName
+	if s:Execute("File", a:action, fileName . s:GetFileCheckingParams() . s:GetParam("version") . topParam) >= 0
+	    execute "edit " . fileName
+	endif
     elseif a:action == "diff"
 	" CMVC command line functionality doesn't directly support a 'diff' command.
 	" This is a convenience implementation I have added, similar to the
@@ -510,14 +555,19 @@ function! s:FileCommand(action)
 	" Activate diff mode for the two new buffers.
 	diffthis
 	execute "silent! vertical diffsplit 1-" . fileName
+	normal gg
     elseif a:action == "unlock" || a:action == "lock"
 	call s:Execute("File", a:action, fileName . s:GetFileCheckingParams())
     endif
 endfunction
+" }}}
 
-" Work with defects in the repository
+" DefectCommand: Work with defects in the repository        {{{
 function! s:DefectCommand(action)
-    if a:action == "open"
+    if a:action == "list"
+        " Open window with list of defects.
+        call s:OpenReportWindow("Defect", a:action, s:GetParam("family"))
+    elseif a:action == "open"
 	let params = s:GetParam("family") . s:GetParam("component") . s:GetParam("abstract")
 		\    s:GetParam("release") . s:GetParam("become") . s:GetParam("level")
 	call s:OpenCommentsWindow("Defect", a:action, params)
@@ -532,7 +582,7 @@ function! s:DefectCommand(action)
 	elseif a:action == "cancel" || a:action == "design" || a:action == "recall" ||
 	    \  a:action == "recall" || a:action == "reopen" || a:action == "review" ||
 	    \  a:action == "size"   || a:action == "verify" || a:action == "assign" ||
-	    \  a:action == "note"   || a:action == "return"
+	    \  a:action == "note"   || a:action == "return" || a:action == "accept"
 	    let params = defectNum . s:GetParam("family") . s:GetParam("become")
 	    if a:action == "assign"
 		let params = params . s:GetParam("owner") . s:GetParam("component")
@@ -550,8 +600,9 @@ function! s:DefectCommand(action)
 	endif
     endif
 endfunction
+" }}}
 
-" Work with tracks in the repository
+" TrackCommand: Work with tracks in the repository          {{{
 function! s:TrackCommand(action)
     let defectNum = s:Get_defect()
     if defectNum == ""
@@ -574,8 +625,9 @@ function! s:TrackCommand(action)
 	call s:Execute( "Track", a:action, s:GetParam("defect") . params)
     endif
 endfunction
+" }}}
 
-" Related to defects, allows you to work with verification records.
+" VerifyCommand: Related to defects, allows you to work with verification records. {{{
 function! s:VerifyCommand(action)
     let defectNum = s:Get_defect()
     if defectNum == ""
@@ -590,14 +642,32 @@ function! s:VerifyCommand(action)
 	call s:OpenCommentsWindow("VerifyCm", a:action, params)
     endif
 endfunction
+" }}}
 
 " Login in and out of CMVC servers when required.
 function! s:CmvcLogCommand(action)
-    let params = s:Get_userName() . s:GetParam("family")
+    let params = s:Get_become() . s:GetParam("family")
     if a:action == "in"
 	let params = params . " -noprompt " . inputsecret( "What is your password?" )
     endif
-    call s:Execute("cmvclog", a:action, params)
+    let $CMVC_AUTH_METHOD='PW'
+    if s:Execute("cmvclog", a:action, params) >= 0
+	if a:action == "in"
+	    echomsg "You have been sucessfully logged in as '" . <SID>Get_become() . "'."
+	    let s:cmvcLoggedIn = 1
+	else
+	    echomsg "You have been sucessfully logged out."
+	    let s:cmvcLoggedIn = 0
+	endif
+	return 0
+    else
+	if a:action == "in"
+	    let s:cmvcLoggedIn = 0
+	else
+	    let s:cmvcLoggedIn = s:cmvcLoggedIn
+	endif
+	return -1
+    endif
 endfunction
 
 " Related to working with files, indicates whether a defect number must be
@@ -639,6 +709,15 @@ function! CMVC(object, action)
     "if s:cmvcInitialized == 0
     "    call s:CmvcInitialize()
     "endif
+    
+    " If we are issuing a command, are using password authentication, and
+    " haven't yet logged in, go ahead and log in now.
+    if s:cmvcLoggedIn == 0 && s:cmvcUseAuthPW == 1 && a:object != 'CmvcLog'
+	echo "You have not yet logged in.  Please do so now..."
+	if <SID>CmvcLogCommand('in') < 0
+	    return
+	endif
+    endif
     if stridx(a:object, "Set") == -1
 	execute "call <SID>" . a:object . "Command('" . a:action . "')"
     else
@@ -656,6 +735,7 @@ if exists('g:autoload') | finish | endif " used by the autoload generator
 " ===================================================================
 
 " Defects		    {{{
+map <silent> <Leader>dli :call CMVC("Defect", "list")<CR>
 map <silent> <Leader>dvi :call CMVC("Defect", "view")<CR>
 map <silent> <Leader>dop :call CMVC("Defect", "open")<CR>
 map <silent> <Leader>das :call CMVC("Defect", "assign")<CR>
@@ -722,6 +802,8 @@ if has("gui_running")
     " autoloading feature.
     if !exists("g:cmvcUsePluginMenu")
 	let s:cmvcUsePluginMenu = 0
+    else
+	let s:cmvcUsePluginMenu = g:cmvcUsePluginMenu
     endif
 
     if !exists("g:cmvcTopLevelMenu")
@@ -730,11 +812,14 @@ if has("gui_running")
 	else
 	    let s:cmvcTopLevelMenu = ""
 	endif
+    else
+        let s:cmvcTopLevelMenu = g:cmvcTopLevelMenu
     endif
 
     let menuCommandPrefix = 'amenu <silent> <script> ' . s:cmvcTopLevelMenu . 'CMVC.'
 
 " Defects		    {{{
+execute menuCommandPrefix . '&Defects.&Defect List<TAB>\\dli :call CMVC("Defect", "list")<CR>'
 execute menuCommandPrefix . '&Defects.&View<TAB>\\dvi :call CMVC("Defect", "view")<CR>'
 execute menuCommandPrefix . '&Defects.&Open<TAB>\\dop :call CMVC("Defect", "open")<CR>'
 execute menuCommandPrefix . '&Defects.A&ssign<TAB>\\das  :call CMVC("Defect", "assign")<CR>'
@@ -778,14 +863,16 @@ execute menuCommandPrefix . '&Verify.&Reject<TAB>\\vre	:call CMVC("Verify", "rej
 "	}}}
 
 " General settings	    {{{
-execute menuCommandPrefix . 'Set\ &Tracking<TAB>\\str	:call CMVC("SetTracking", "")<CR>'
-execute menuCommandPrefix . 'Set\ &Family<TAB>\\sfa	:call CMVC("SetFamily", "")<CR>'
-execute menuCommandPrefix . 'Set\ &Release<TAB>\\sre	:call CMVC("SetRelease", "")<CR>'
-execute menuCommandPrefix . 'Set\ &Component<TAB>\\sco	:call CMVC("SetComponent", "")<CR>'
-execute menuCommandPrefix . 'Set\ &Become<TAB>\\sbe	:call CMVC("SetBecome", "")<CR>'
-execute menuCommandPrefix . 'Set\ &Verbose<TAB>\\sve	:call CMVC("SetVerbose", "")<CR>'
-execute menuCommandPrefix . 'Set\ To&p<TAB>\\sto	:call CMVC("SetTop", "")<CR>'
+execute menuCommandPrefix . '&Settings.&Tracking<TAB>\\str	:call CMVC("SetTracking", "")<CR>'
+execute menuCommandPrefix . '&Settings.&Family<TAB>\\sfa	:call CMVC("SetFamily", "")<CR>'
+execute menuCommandPrefix . '&Settings.&Release<TAB>\\sre	:call CMVC("SetRelease", "")<CR>'
+execute menuCommandPrefix . '&Settings.&Component<TAB>\\sco	:call CMVC("SetComponent", "")<CR>'
+execute menuCommandPrefix . '&Settings.&Become<TAB>\\sbe	:call CMVC("SetBecome", "")<CR>'
+execute menuCommandPrefix . '&Settings.&Verbose<TAB>\\sve	:call CMVC("SetVerbose", "")<CR>'
+execute menuCommandPrefix . '&Settings.To&p<TAB>\\sto	:call CMVC("SetTop", "")<CR>'
 "	}}}
+
+execute menuCommandPrefix . '-sep1- <nop>'
 
 execute menuCommandPrefix . 'Login<TAB>\\lin	:call CMVC("CmvcLog", "in")<CR>'
 execute menuCommandPrefix . 'Logout<TAB>\\lou	:call CMVC("CmvcLog", "out")<CR>'

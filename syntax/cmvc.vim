@@ -1,7 +1,7 @@
 " Vim syntax file
 " Language:	CMVC
 " Maintainer:	Dan Sharp <dwsharp at hotmail dot com>
-" Last Change:	Thu, 01 Mar 2002 17:30:00 Eastern Standard Time
+" Last Change:	Fri, 06 Dec 2002 10:28:30 -0500
 
 " For version 5.x: Clear all syntax items
 " For version 6.x: Quit when a syntax file was already loaded
