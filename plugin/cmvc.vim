@@ -1,7 +1,7 @@
 " File:		cmvc.vim (global plugin)
-" Last Change:	Thu, 14 Feb 2002 11:59:57 Eastern Standard Time
+" Last Change:	Thu, 14 Feb 2002 23:01:51 Eastern Standard Time
 " Maintainer:	Dan Sharp <dwsharp@hotmail.com>
-" Version:	1.0
+" Version:	1.1
 "
 " NOTE:		This script currently requires Vim 6.  If there is interest
 "		in making it 5.x compatible, let me know and I will see what 
@@ -10,6 +10,7 @@
 " Installation:	Just drop this file into your plugin directory, and it will
 "		automatically be loaded when you start Vim.  Otherwise, just
 "		put it in a directory of your choice and :source it as needed.
+"		The syntax should go in the syntax directory.
 " 
 " This script integrates using the IBM Configuration Management Version
 " Control (CMVC) application from within Vim.  It provides keyboard shortcuts
@@ -28,7 +29,6 @@
 "		checkout.
 "	    -	Make the script more "plugin-ized", like allowing users to
 "		override the default mappings and use their own.
-"	    -	add a syntax file for the -view output from various commands
 "	    -	create a formal help file
 "	    -	Keep a history of releases, components, and families used,
 "		then present them in a "confirm" dialog so the user can just
@@ -36,6 +36,12 @@
 "		bring up an "inputdialog" so the user can still enter an
 "		unlisted / new value.
 "	    -	Add commands to let the functions be used in Command mode.
+"
+" Changelog:
+"	1.0:	Initial Release
+"	1.1:	Added syntax file for to highlight -view output.
+"		Added extra map command for closing -view buffer
+"		Bug fixes
 
 if exists("loaded_cmvc") || &cp
     finish
@@ -52,7 +58,7 @@ set cpo&vim
 " ===================================================================
 if exists("g:cmvcRelease")
     let s:cmvcRelease = g:cmvcRelease
-elseif exists("CMVC_RELEASE")
+elseif exists("$CMVC_RELEASE")
     let s:cmvcRelease = $CMVC_RELEASE
 else
     let s:cmvcRelease = ""
@@ -60,7 +66,7 @@ endif
 
 if exists("g:cmvcFamily")
     let s:cmvcFamily = g:cmvcFamily
-elseif exists("CMVC_FAMILY")
+elseif exists("$CMVC_FAMILY")
     let s:cmvcFamily = $CMVC_FAMILY
 else
     let s:cmvcFamily = ""
@@ -68,7 +74,7 @@ endif
 
 if exists("g:cmvcComponent")
     let s:cmvcComponent = g:cmvcComponent
-elseif exists("CMVC_COMPONENT")
+elseif exists("$CMVC_COMPONENT")
     let s:cmvcComponent = $CMVC_COMPONENT
 else
     let s:cmvcComponent = ""
@@ -76,7 +82,7 @@ endif
 
 if exists("g:cmvcTop")
     let s:cmvcTop = g:cmvcTop
-elseif exists("CMVC_TOP")
+elseif exists("$CMVC_TOP")
     let s:cmvcTop = $CMVC_TOP
 else
     let s:cmvcTop = ""
@@ -208,7 +214,7 @@ function! s:getRemarks()
 endfunction
 
 function! s:getRemarksParam()
-    return " -remarks \"" . getRemarks() . "\""
+    return " -remarks \"" . s:getRemarks() . "\""
 endfunction
 " }}}
 
@@ -251,6 +257,8 @@ function s:view(object, target, extraParams)
     set bufhidden=hide
     set noswapfile
     execute "silent 0r !" . a:object . " -view " . a:target . a:extraParams . " -long"
+    " Set the filetype to cmvc to load the CMVC syntax file
+    setf cmvc
 endfunction
 
 " Many operations allow the user to add remarks about the action they are
@@ -261,10 +269,16 @@ endfunction
 function! s:openCommentsWindow(object, action, params)
     new 
     set buftype=nofile
-    set bufhidden=delete
+    set bufhidden=unload
+    set nobuflisted
     set noswapfile
-    execute "map <silent> <buffer> :wq :call <SID>execute('" . a:object . "', '"
-	\ . a:action . "', '" . a:params . "' . <SID>getRemarksParam() ) <bar> bw<CR>"
+    let mapCommand = ":call <SID>execute('" . a:object . "', '" . a:action
+	\ . "', '" . a:params . "' . <SID>getRemarksParam() ) <bar> bw<CR>"
+
+    " Map the common write commands to call execute() and then wipeout the
+    " buffer.
+    execute "cmap <silent> <buffer> wq " . mapCommand
+    execute "nmap <silent> <buffer> ZZ " . mapCommand
 endfunction
 
 " All commands except the -view have the same execution syntax.  This is just
