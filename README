@@ -1,0 +1,16 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=217
+
+This script integrates using the IBM Configuration Management Version Control (CMVC) application from within Vim.  It provides keyboard shortcuts as well as a menu to access common functions such as checking files in and out, viewing and responding to defects, etc.
+
+Currently, only the functions I use regularly (Defect, File, Track, and VerifyCm) are implemented.  If you want to add others, the API should be fairly straightforward to do so.  Of course, I would appreciate receiving any changes you make, so that I can incorporate it into the next version (and avoid duplicating the work myself).
+
+NOTE:  This script currently requires Vim 6.  If there is interest in making it 5.x compatible, let me know and I will see what I can do.
+
+TODO:	    Here are some other things I want to add when I get around to it:
+    -	Implement more functions, like Report, to get a list of available defects / files / etc., which you can then view or
+	checkout.
+    -	Make the script more "plugin-ized", like allowing users to override the default mappings and use their own.
+    -	Keep a history of releases, components, and families used, then present them in a "confirm" dialog so the user
+	can just pick one instead of retyping it.  Inlcude an "other" button to bring up an "inputdialog" so the user can still
+	enter an unlisted / new value.
+    -	Add commands to let the functions be used in Command mode.
